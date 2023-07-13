@@ -20,6 +20,7 @@ class MyApp extends StatelessWidget {
       var data = json.decode(res.body);
       vendeurs = data['data'];
       currentTime = DateTime.parse(data['time']);
+      duration = int.parse(data['duration']);
     }
   }
 
@@ -28,6 +29,7 @@ class MyApp extends StatelessWidget {
     loadVendeurs();
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      theme: ThemeData(fontFamily: 'Roboto'),
       home: Scaffold(
         body: Column(
           children: [
@@ -56,7 +58,7 @@ class MyApp extends StatelessWidget {
                         Image.asset('date.png'),
                         const SizedBox(width: 16.0),
                         Text(
-                          DateFormat('dd-MM-yyyy').format(DateTime.now()),
+                          DateFormat('dd-MM-yyyy').format(currentTime),
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 38,
@@ -98,8 +100,10 @@ class _DataTableState extends State<DataTable> {
   }
 
   void loaddata() async {
-    commandesBrut.clear();
+    dataloaded = false;
     isAprepare = false;
+    commandesBrut.clear();
+
     Future.delayed(Duration.zero, () async {
       var res = await http.post(Uri.parse('http://10.10.10.5:8081/test/php/cmc.php'));
 
@@ -116,10 +120,7 @@ class _DataTableState extends State<DataTable> {
     loaddata();
 
     super.initState();
-    Timer.periodic(const Duration(seconds: 10), (Timer t) {
-      dataloaded = false;
-      loaddata();
-    });
+    Timer.periodic(Duration(seconds: duration), (Timer t) => loaddata());
   }
 
   @override

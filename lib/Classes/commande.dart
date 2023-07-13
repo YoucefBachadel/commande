@@ -28,4 +28,5 @@ class Commande {
 
 bool isAprepare = false;
 DateTime currentTime = DateTime.now();
+int duration = 10;
 var vendeurs = {};
