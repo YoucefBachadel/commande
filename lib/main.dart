@@ -2,12 +2,22 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:audioplayers/audioplayers.dart';
+import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'package:commande/Classes/commande.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 
-void main() => runApp(const MyApp());
+void main() {
+  runApp(const MyApp());
+  doWhenWindowReady(() {
+    const initialSize = Size(1800, 950);
+    appWindow.minSize = initialSize;
+    appWindow.title = "Commande";
+    appWindow.maximize();
+    appWindow.show();
+  });
+}
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -20,7 +30,8 @@ class MyApp extends StatelessWidget {
       var data = json.decode(res.body);
       vendeurs = data['data'];
       currentTime = DateTime.parse(data['time']);
-      duration = int.parse(data['duration']);
+      firstTime = currentTime;
+      duration = data['duration'];
     }
   }
 
@@ -37,41 +48,45 @@ class MyApp extends StatelessWidget {
               flex: 15,
               child: DataTable(),
             ),
-            Expanded(
-              child: Container(
-                color: const Color(0xff195c79),
-                child: Row(
-                  children: [
-                    const Spacer(),
-                    Row(
-                      children: [
-                        Image.asset('clock.png'),
-                        const SizedBox(width: 16.0),
-                        const CurrentTime(),
-                      ],
-                    ),
-                    const Spacer(flex: 2),
-                    Image.asset('logo.jpg'),
-                    const Spacer(flex: 2),
-                    Row(
-                      children: [
-                        Image.asset('date.png'),
-                        const SizedBox(width: 16.0),
-                        Text(
-                          DateFormat('dd-MM-yyyy').format(currentTime),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 38,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        )
-                      ],
-                    ),
-                    const Spacer(),
-                  ],
-                ),
-              ),
+            bottomWidget(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget bottomWidget() {
+    return Expanded(
+      child: Container(
+        color: const Color(0xff195c79),
+        child: Row(
+          children: [
+            const Spacer(),
+            Row(
+              children: [
+                Image.asset('assets/clock.png'),
+                const SizedBox(width: 16.0),
+                const CurrentTime(),
+              ],
             ),
+            const Spacer(flex: 2),
+            Image.asset('assets/logo.jpg'),
+            const Spacer(flex: 2),
+            Row(
+              children: [
+                Image.asset('assets/date.png'),
+                const SizedBox(width: 16.0),
+                Text(
+                  DateFormat('dd-MM-yyyy').format(firstTime),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 38,
+                    fontWeight: FontWeight.w500,
+                  ),
+                )
+              ],
+            ),
+            const Spacer(),
           ],
         ),
       ),
@@ -87,7 +102,7 @@ class DataTable extends StatefulWidget {
 }
 
 class _DataTableState extends State<DataTable> {
-  bool dataloaded = false;
+  bool isLoading = false, isError = false;
   dynamic data;
   List<Commande> commandesBrut = [];
   final audioPlayer = AudioPlayer();
@@ -99,28 +114,41 @@ class _DataTableState extends State<DataTable> {
     audioPlayer.resume();
   }
 
-  void loaddata() async {
-    dataloaded = false;
-    isAprepare = false;
-    commandesBrut.clear();
+  void restart() =>
+      Navigator.pushReplacement(context, MaterialPageRoute<void>(builder: (BuildContext context) => const MyApp()));
 
-    Future.delayed(Duration.zero, () async {
+  void loaddata() async {
+    while (true) {
+      if (currentTime.day != firstTime.day) restart();
+
+      isLoading = true;
+      isError = false;
+      isAprepare = false;
+      commandesBrut.clear();
+
       var res = await http.post(Uri.parse('http://10.10.10.5:8081/test/php/cmc.php'));
 
       if (res.statusCode == 200) {
         data = json.decode(res.body);
-        commandesBrut = List<Commande>.from(data["data"].map((i) => Commande.fromJSON(i)));
-        setState(() => dataloaded = true);
+        if (data == "error") {
+          setState(() {
+            isLoading = false;
+            isError = true;
+          });
+        } else {
+          commandesBrut = List<Commande>.from(data.map((i) => Commande.fromJSON(i)));
+          setState(() => isLoading = false);
+        }
+        await Future.delayed(Duration(seconds: duration));
       }
-    });
+    }
   }
 
   @override
   void initState() {
-    loaddata();
-
     super.initState();
-    Timer.periodic(Duration(seconds: duration), (Timer t) => loaddata());
+
+    loaddata();
   }
 
   @override
@@ -128,14 +156,22 @@ class _DataTableState extends State<DataTable> {
     return Container(
       color: isAprepare ? Colors.red : const Color(0xff042434),
       //check if data is loaded, if loaded then show datalist on child
-      child: dataloaded
-          ? datalist()
-          : const Center(
-              //if data is not loaded then show progress
-              child: CircularProgressIndicator(
-                color: Colors.white,
-              ),
-            ),
+      child: isLoading
+          ? const Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            )
+          : isError
+              ? const Center(
+                  child: Text(
+                    'Erreur!!!',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 38,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                )
+              : datalist(),
     );
   }
 
@@ -158,13 +194,17 @@ class _DataTableState extends State<DataTable> {
       if (element.cleEtatEffet == '2') commandes.add(element);
     }
     for (var element in commandesBrut) {
+      // Produit Showroom
+      if (element.cleEtatEffet == '63') commandes.add(element);
+    }
+    for (var element in commandesBrut) {
       // PRETE
       if (element.cleEtatEffet == '3') commandes.add(element);
     }
     if (commandes.isEmpty) {
       return const Center(
         child: Text(
-          'No Data',
+          'Liste Vide',
           style: TextStyle(
             color: Colors.white,
             fontSize: 38,
@@ -181,7 +221,6 @@ class _DataTableState extends State<DataTable> {
             1: FlexColumnWidth(2),
             2: FlexColumnWidth(1),
             3: FlexColumnWidth(1),
-            // 4: FlexColumnWidth(1),
           },
           border: TableBorder.all(
             color: Colors.grey,
@@ -197,7 +236,6 @@ class _DataTableState extends State<DataTable> {
                   headerCell('Etat de commande'),
                   headerCell('Reference'),
                   headerCell('Vendeur'),
-                  // headerCell('Modifié le'),
                 ]),
             ...commandes
                 .map((commande) => TableRow(children: [
@@ -206,7 +244,7 @@ class _DataTableState extends State<DataTable> {
                           ? Container(
                               color: Colors.red[900],
                               child: bodyCell(
-                                'A préparer',
+                                'A préparer        ${commande.time == 0 ? '<1' : commande.time} min',
                                 fontSize: 24,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -230,17 +268,26 @@ class _DataTableState extends State<DataTable> {
                                         fontWeight: FontWeight.w600,
                                       ),
                                     )
-                                  : Container(
-                                      color: Colors.green[700],
-                                      child: bodyCell(
-                                        'Prete',
-                                        fontSize: 24,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
+                                  : commande.cleEtatEffet == '63'
+                                      ? Container(
+                                          color: const Color(0xff00beff),
+                                          child: bodyCell(
+                                            'Showroom        ${commande.time == 0 ? '<1' : commande.time} min',
+                                            textColor: Colors.black,
+                                            fontSize: 24,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        )
+                                      : Container(
+                                          color: Colors.green[700],
+                                          child: bodyCell(
+                                            'Prete        ${commande.time == 0 ? '<1' : commande.time} min',
+                                            fontSize: 24,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
                       bodyCell(commande.reference),
                       bodyCell(vendeurs[commande.vendeur.toString()] ?? commande.vendeur),
-                      // bodyCell(commande.time.toString()),
                     ]))
                 .toList(),
           ],
@@ -299,9 +346,8 @@ class CurrentTime extends StatefulWidget {
 class _CurrentTimeState extends State<CurrentTime> {
   @override
   void initState() {
-    Timer.periodic(const Duration(seconds: 1), (Timer t) {
-      setState(() => currentTime = currentTime.add(const Duration(seconds: 1)));
-    });
+    Timer.periodic(const Duration(seconds: 1),
+        (Timer t) => setState(() => currentTime = currentTime.add(const Duration(seconds: 1))));
     super.initState();
   }
 
